@@ -64,3 +64,24 @@ class PlayerState:
 
 shared_state = PlayerState()
 
+def input_thread_func():
+    global EXIT_FLAG
+    fd = sys.stdin.fileno()
+    try:
+        old_settings = termios.tcgetattr(fd)
+    except termios.error:
+        return
+
+    try:
+        tty.setcbreak(fd)
+        while not EXIT_FLAG:
+            if select.select([sys.stdin], [], [], 0.1)[0]:
+                char = sys.stdin.read(1)
+                if char.lower() == 'q' or char == '\x03': # q or Ctrl+C
+                    EXIT_FLAG = True
+                    break
+    except Exception:
+        pass
+    finally:
+        termios.tcsetattr(fd, termios.TCSADRAIN, old_settings)
+
