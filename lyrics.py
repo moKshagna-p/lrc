@@ -297,3 +297,34 @@ def render_lyrics(lyrics_data: Dict[str, Any]) -> Panel:
         plain_text = lyrics_data.get('plain', '')
         return Panel(Align.center(Text(plain_text, style="white")), border_style="grey23")
 
+def render_progress() -> Panel:
+    pos = shared_state.get_smooth_position()
+    with shared_state.lock:
+        dur = shared_state.duration
+    
+    def format_time(seconds: float) -> str:
+        if seconds < 0:
+            seconds = 0
+        m = int(seconds // 60)
+        s = int(seconds % 60)
+        # Adding fractions of a second gives it that smooth, fast-ticking aesthetic!
+        ms = int((seconds % 1) * 10) 
+        return f"{m}:{s:02d}.{ms}"
+        
+    pos_str = format_time(pos)
+    dur_str = format_time(dur)
+    
+    ratio = pos / dur if dur > 0 else 0.0
+    ratio = min(max(ratio, 0.0), 1.0)
+    
+    bar_width = 40
+    filled = int(bar_width * ratio)
+    empty = bar_width - filled
+    
+    bar_text = Text()
+    bar_text.append("█" * filled, style="bright_magenta")
+    bar_text.append("░" * empty, style="grey30")
+    bar_text.append(f"  {pos_str} / {dur_str}", style="bright_white")
+    
+    return Panel(Align.center(bar_text, vertical="middle"), border_style="grey23")
+
