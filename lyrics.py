@@ -253,3 +253,47 @@ def render_header() -> Panel:
         
     return Panel(Align.center(text, vertical="middle"), border_style="grey23")
 
+def render_lyrics(lyrics_data: Dict[str, Any]) -> Panel:
+    if not lyrics_data.get('found'):
+        return Panel(Align.center(Text("No lyrics found for this song", style="dim white"), vertical="middle"), border_style="grey23")
+    
+    if lyrics_data.get('synced'):
+        current_time = shared_state.get_smooth_position()
+        lines = lyrics_data['synced']
+        
+        current_idx = -1
+        for i, (t, _) in enumerate(lines):
+            if current_time >= t:
+                current_idx = i
+            else:
+                break
+                
+        lines_to_show = []
+        # We'll use double spacing for an aesthetic, airy look.
+        # Show 3 lines above and 3 lines below to fit nicely with double spacing.
+        for i in range(current_idx - 3, current_idx + 4):
+            if i < 0 or i >= len(lines):
+                lines_to_show.append(Text(" "))
+            else:
+                _, line_text = lines[i]
+                if not line_text.strip():
+                    line_text = "✦ ✦ ✦"
+                
+                if i == current_idx:
+                    t = Text(f"▶  {line_text}", style="bold italic bright_magenta")
+                elif i in (current_idx - 1, current_idx + 1):
+                    t = Text(f"   {line_text}", style="white")
+                else:
+                    t = Text(f"   {line_text}", style="dim grey62")
+                lines_to_show.append(t)
+            
+            # Double spacing
+            if i != current_idx + 3:
+                lines_to_show.append(Text(" "))
+        
+        combined_text = Text("\n").join(lines_to_show)
+        return Panel(Align.center(combined_text, vertical="middle"), border_style="grey23")
+    else:
+        plain_text = lyrics_data.get('plain', '')
+        return Panel(Align.center(Text(plain_text, style="white")), border_style="grey23")
+
