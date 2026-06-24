@@ -380,10 +380,26 @@ def main():
                     if key != current_song_key:
                         current_song_key = key
                         if key not in cache:
+                            # Set initial loading state so the UI responds immediately
                             cache[key] = {
-                                "lyrics": fetch_lyrics(artist, track, album),
-                                "artwork": fetch_and_render_artwork(artist, album, track)
+                                "lyrics": {"found": False, "synced": None, "plain": "Loading lyrics..."},
+                                "artwork": None
                             }
+                            
+                            # Spawn background thread to fetch data
+                            def background_fetch(k, a, t, al):
+                                try:
+                                    art = fetch_and_render_artwork(a, al, t)
+                                    lyr = fetch_lyrics(a, t, al)
+                                    cache[k] = {
+                                        "lyrics": lyr,
+                                        "artwork": art
+                                    }
+                                except Exception:
+                                    pass
+                                    
+                            import threading
+                            threading.Thread(target=background_fetch, args=(key, artist, track, album), daemon=True).start()
                             
                     lyrics_data = cache[key]["lyrics"]
                     artwork_text = cache[key]["artwork"]
