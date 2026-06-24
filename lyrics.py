@@ -3,6 +3,7 @@
 lyrics.py — A beautiful, full-screen lyrics viewer for Apple Music with cover art.
 """
 
+import os
 import sys
 import time
 import re
@@ -226,7 +227,7 @@ def fetch_and_render_artwork(artist: str, album: str, track: str, width: int = 3
             
     return None
 
-def make_layout() -> Layout:
+def make_layout(artwork_size: int = 42) -> Layout:
     layout = Layout()
     layout.split_column(
         Layout(name="header", size=10),
@@ -236,7 +237,7 @@ def make_layout() -> Layout:
     )
     
     layout["main"].split_row(
-        Layout(name="artwork", size=42),
+        Layout(name="artwork", size=artwork_size),
         Layout(name="lyrics", ratio=1)
     )
     return layout
@@ -351,7 +352,9 @@ def main():
     poll_thread = threading.Thread(target=apple_music_poll_thread, daemon=True)
     poll_thread.start()
     
-    layout = make_layout()
+    term_cols = os.get_terminal_size().columns
+    artwork_width = max(20, min(term_cols // 4, 60))
+    layout = make_layout(artwork_size=artwork_width + 6)
     cache: Dict[str, Any] = {}
     current_song_key: Optional[str] = None
     
@@ -387,7 +390,7 @@ def main():
                             }
                             
                             # Spawn background thread to fetch data
-                            def background_fetch(k, a, t, al):
+                            def background_fetch(k, a, t, al, aw):
                                 try:
                                     lyr = fetch_lyrics(a, t, al)
                                     cache[k] = {
@@ -397,13 +400,13 @@ def main():
                                 except Exception:
                                     pass
                                 try:
-                                    art = fetch_and_render_artwork(a, al, t)
+                                    art = fetch_and_render_artwork(a, al, t, width=aw)
                                     if k in cache:
                                         cache[k]["artwork"] = art
                                 except Exception:
                                     pass
                                     
-                            threading.Thread(target=background_fetch, args=(key, artist, track, album), daemon=True).start()
+                            threading.Thread(target=background_fetch, args=(key, artist, track, album, artwork_width), daemon=True).start()
                             
                     lyrics_data = cache[key]["lyrics"]
                     artwork_text = cache[key]["artwork"]
