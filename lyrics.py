@@ -182,3 +182,36 @@ def fetch_lyrics(artist: str, track: str, album: str) -> Dict[str, Any]:
         pass
     return {"found": False, "synced": None, "plain": None}
 
+def fetch_and_render_artwork(artist: str, album: str, track: str, width: int = 36) -> Optional[Text]:
+    url = "https://itunes.apple.com/search"
+    term = f"{artist} {album}" if album else f"{artist} {track}"
+    params = {"term": term, "media": "music", "entity": "song", "limit": 1}
+    try:
+        resp = requests.get(url, params=params, timeout=5)
+        if resp.status_code == 200:
+            results = resp.json().get("results", [])
+            if results:
+                art_url = results[0].get("artworkUrl100")
+                if art_url:
+                    art_url = art_url.replace("100x100bb", "600x600bb")
+                    img_resp = requests.get(art_url, timeout=5)
+                    if img_resp.status_code == 200:
+                        img = Image.open(BytesIO(img_resp.content)).convert("RGB")
+                        img = img.resize((width, width), Image.Resampling.LANCZOS)
+                        pixels = img.load()
+                        
+                        lines = []
+                        for y in range(0, width, 2):
+                            line = Text()
+                            for x in range(width):
+                                top = pixels[x, y]
+                                bottom = pixels[x, y+1] if y+1 < width else (0,0,0)
+                                style = f"rgb({top[0]},{top[1]},{top[2]}) on rgb({bottom[0]},{bottom[1]},{bottom[2]})"
+                                line.append("▀", style=style)
+                            lines.append(line)
+                            
+                        return Text("\n").join(lines)
+    except Exception:
+        pass
+    return None
+
