@@ -161,58 +161,73 @@ def fetch_lyrics(artist: str, track: str, album: str) -> Dict[str, Any]:
     track_clean = re.sub(r'\(feat\..*?\)', '', track, flags=re.IGNORECASE).strip()
     url = "https://lrclib.net/api/get"
     params = {"artist_name": artist, "track_name": track_clean, "album_name": album}
+    headers = {"User-Agent": "LyricsViewer/1.0 (https://github.com/moKshagna-p/lrc)"}
     
-    try:
-        resp = requests.get(url, params=params, timeout=5)
-        if resp.status_code == 404:
-            if "album_name" in params:
-                del params["album_name"]
-            resp = requests.get(url, params=params, timeout=5)
+    for _ in range(3):
+        try:
+            resp = requests.get(url, params=params, headers=headers, timeout=5)
+            if resp.status_code == 404:
+                if "album_name" in params:
+                    del params["album_name"]
+                resp = requests.get(url, params=params, headers=headers, timeout=5)
+                
+            if resp.status_code == 200:
+                data = resp.json()
+                synced = data.get("syncedLyrics")
+                plain = data.get("plainLyrics")
+                return {
+                    "found": True,
+                    "synced": parse_lrc(synced) if synced else None,
+                    "plain": plain
+                }
+            break # If we connected successfully but got 404 again, stop retrying
+        except Exception:
+            import time
+            time.sleep(0.5)
+            continue
             
-        if resp.status_code == 200:
-            data = resp.json()
-            synced = data.get("syncedLyrics")
-            plain = data.get("plainLyrics")
-            return {
-                "found": True,
-                "synced": parse_lrc(synced) if synced else None,
-                "plain": plain
-            }
-    except Exception:
-        pass
     return {"found": False, "synced": None, "plain": None}
 
 def fetch_and_render_artwork(artist: str, album: str, track: str, width: int = 36) -> Optional[Text]:
     url = "https://itunes.apple.com/search"
-    term = f"{artist} {album}" if album else f"{artist} {track}"
+    term = f"{artist} {track}"
     params = {"term": term, "media": "music", "entity": "song", "limit": 1}
-    try:
-        resp = requests.get(url, params=params, timeout=5)
-        if resp.status_code == 200:
-            results = resp.json().get("results", [])
-            if results:
-                art_url = results[0].get("artworkUrl100")
-                if art_url:
-                    art_url = art_url.replace("100x100bb", "600x600bb")
-                    img_resp = requests.get(art_url, timeout=5)
-                    if img_resp.status_code == 200:
-                        img = Image.open(BytesIO(img_resp.content)).convert("RGB")
-                        img = img.resize((width, width), Image.Resampling.LANCZOS)
-                        pixels = img.load()
-                        
-                        lines = []
-                        for y in range(0, width, 2):
-                            line = Text()
-                            for x in range(width):
-                                top = pixels[x, y]
-                                bottom = pixels[x, y+1] if y+1 < width else (0,0,0)
-                                style = f"rgb({top[0]},{top[1]},{top[2]}) on rgb({bottom[0]},{bottom[1]},{bottom[2]})"
-                                line.append("▀", style=style)
-                            lines.append(line)
+    headers = {"User-Agent": "LyricsViewer/1.0 (https://github.com/moKshagna-p/lrc)"}
+    
+    for _ in range(3):
+        try:
+            resp = requests.get(url, params=params, headers=headers, timeout=5)
+            if resp.status_code == 200:
+                results = resp.json().get("results", [])
+                if results:
+                    art_url = results[0].get("artworkUrl100")
+                    if art_url:
+                        art_url = art_url.replace("100x100bb", "600x600bb")
+                        img_resp = requests.get(art_url, timeout=5)
+                        if img_resp.status_code == 200:
+                            from PIL import Image
+                            from io import BytesIO
+                            img = Image.open(BytesIO(img_resp.content)).convert("RGB")
+                            img = img.resize((width, width), Image.Resampling.LANCZOS)
+                            pixels = img.load()
                             
-                        return Text("\n").join(lines)
-    except Exception:
-        pass
+                            lines = []
+                            for y in range(0, width, 2):
+                                line = Text()
+                                for x in range(width):
+                                    top = pixels[x, y]
+                                    bottom = pixels[x, y+1] if y+1 < width else (0,0,0)
+                                    style = f"rgb({top[0]},{top[1]},{top[2]}) on rgb({bottom[0]},{bottom[1]},{bottom[2]})"
+                                    line.append("▀", style=style)
+                                lines.append(line)
+                                
+                            return Text("\n").join(lines)
+            break
+        except Exception:
+            import time
+            time.sleep(0.5)
+            continue
+            
     return None
 
 def make_layout() -> Layout:
