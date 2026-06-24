@@ -85,3 +85,60 @@ def input_thread_func():
     finally:
         termios.tcsetattr(fd, termios.TCSADRAIN, old_settings)
 
+def apple_music_poll_thread():
+    """Background thread to poll Apple Music without stuttering the UI."""
+    global EXIT_FLAG
+    script = '''
+    tell application "System Events"
+        if not (exists process "Music") then
+            return "NOT_RUNNING"
+        end if
+    end tell
+    tell application "Music"
+        if player state is playing then
+            set t to name of current track
+            set ar to artist of current track
+            set al to album of current track
+            set pos to player position
+            set dur to duration of current track
+            return t & "||" & ar & "||" & al & "||" & pos & "||" & dur
+        else
+            return "NOT_PLAYING"
+        end if
+    end tell
+    '''
+    while not EXIT_FLAG:
+        try:
+            result = subprocess.run(['osascript', '-e', script], capture_output=True, text=True, check=True)
+            out = result.stdout.strip()
+            if out == "NOT_RUNNING":
+                shared_state.update({"status": "NOT_RUNNING"})
+            elif out == "NOT_PLAYING":
+                shared_state.update({"status": "NOT_PLAYING"})
+            else:
+                parts = out.split("||")
+                if len(parts) >= 5:
+                    try:
+                        pos = float(parts[3].replace(',', '.'))
+                        dur = float(parts[4].replace(',', '.'))
+                    except ValueError:
+                        pos, dur = 0.0, 0.0
+                    shared_state.update({
+                        "status": "PLAYING",
+                        "track_name": parts[0],
+                        "artist_name": parts[1],
+                        "album_name": parts[2],
+                        "position": pos,
+                        "duration": dur
+                    })
+                else:
+                    shared_state.update({"status": "ERROR"})
+        except Exception:
+            shared_state.update({"status": "ERROR"})
+            
+        # Sleep for 1.5 seconds before syncing again; the UI interpolates the gaps!
+        for _ in range(15):
+            if EXIT_FLAG:
+                break
+            time.sleep(0.1)
+
