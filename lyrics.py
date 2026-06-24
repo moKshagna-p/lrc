@@ -331,3 +331,71 @@ def render_progress() -> Panel:
 def render_footer() -> Panel:
     return Panel(Align.center(Text("press Q to quit", style="dim grey50"), vertical="middle"), border_style="grey23")
 
+def main():
+    global EXIT_FLAG
+    
+    input_thread = threading.Thread(target=input_thread_func, daemon=True)
+    input_thread.start()
+    
+    poll_thread = threading.Thread(target=apple_music_poll_thread, daemon=True)
+    poll_thread.start()
+    
+    layout = make_layout()
+    cache: Dict[str, Any] = {}
+    current_song_key: Optional[str] = None
+    
+    try:
+        # High refresh rate for ultra-smooth UI animations (20 FPS)
+        with Live(layout, screen=True, refresh_per_second=20):
+            while not EXIT_FLAG:
+                with shared_state.lock:
+                    status = shared_state.status
+                    track = shared_state.track_name
+                    artist = shared_state.artist_name
+                    album = shared_state.album_name
+                
+                if status == "NOT_RUNNING":
+                    layout["lyrics"].update(Panel(Align.center(Text("Apple Music is not running", style="dim white"), vertical="middle"), border_style="grey23"))
+                    layout["artwork"].update(Panel(Text(""), border_style="grey23"))
+                    layout["header"].update(Panel(Text(""), border_style="grey23"))
+                    layout["progress"].update(Panel(Text(""), border_style="grey23"))
+                elif status == "NOT_PLAYING":
+                    layout["lyrics"].update(Panel(Align.center(Text("Nothing playing in Apple Music ♫", style="dim white"), vertical="middle"), border_style="grey23"))
+                    layout["artwork"].update(Panel(Text(""), border_style="grey23"))
+                    layout["header"].update(Panel(Text(""), border_style="grey23"))
+                    layout["progress"].update(Panel(Text(""), border_style="grey23"))
+                elif status == "PLAYING":
+                    key = f"{artist}-{track}"
+                    if key != current_song_key:
+                        current_song_key = key
+                        if key not in cache:
+                            cache[key] = {
+                                "lyrics": fetch_lyrics(artist, track, album),
+                                "artwork": fetch_and_render_artwork(artist, album, track)
+                            }
+                            
+                    lyrics_data = cache[key]["lyrics"]
+                    artwork_text = cache[key]["artwork"]
+                    
+                    layout["header"].update(render_header())
+                    layout["lyrics"].update(render_lyrics(lyrics_data))
+                    
+                    if artwork_text:
+                        layout["artwork"].update(Panel(Align.center(artwork_text, vertical="middle"), border_style="grey23"))
+                    else:
+                        layout["artwork"].update(Panel(Align.center(Text("No Artwork Found", style="dim grey50"), vertical="middle"), border_style="grey23"))
+                        
+                    layout["progress"].update(render_progress())
+                else:
+                    layout["lyrics"].update(Panel(Align.center(Text("Error connecting to Apple Music", style="red"), vertical="middle"), border_style="grey23"))
+                
+                layout["footer"].update(render_footer())
+                
+                # Sleep briefly in main thread, updates happen cleanly via threads
+                time.sleep(0.05)
+                    
+    except KeyboardInterrupt:
+        EXIT_FLAG = True
+
+if __name__ == "__main__":
+    main()
