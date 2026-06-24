@@ -328,3 +328,6 @@ def render_progress() -> Panel:
     
     return Panel(Align.center(bar_text, vertical="middle"), border_style="grey23")
 
+def render_footer() -> Panel:
+    return Panel(Align.center(Text("press Q to quit", style="dim grey50"), vertical="middle"), border_style="grey23")
+
