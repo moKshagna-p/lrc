@@ -230,3 +230,26 @@ def make_layout() -> Layout:
     )
     return layout
 
+def render_header() -> Panel:
+    with shared_state.lock:
+        track = shared_state.track_name or "Unknown"
+        artist = shared_state.artist_name or "Unknown"
+        album = shared_state.album_name or ""
+
+    text = Text()
+    try:
+        # Use pyfiglet 'small' font for giant, readable terminal text
+        fig = pyfiglet.Figlet(font='small', width=120)
+        large_track = fig.renderText(track)
+        # Clean up empty lines from ascii art
+        large_track = "\n".join([line for line in large_track.split('\n') if line.strip("\r\n")])
+        text.append(f"{large_track}\n", style="bold bright_white")
+    except Exception:
+        text.append(f"♫ {track} \n", style="bold white")
+        
+    text.append(f"✦ {artist} ✦", style="italic bright_cyan")
+    if album:
+        text.append(f"\n{album}", style="dim grey62")
+        
+    return Panel(Align.center(text, vertical="middle"), border_style="grey23")
+
