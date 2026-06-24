@@ -305,7 +305,7 @@ def render_lyrics(lyrics_data: Dict[str, Any]) -> Panel:
         combined_text = Text("\n").join(lines_to_show)
         return Panel(Align.center(combined_text, vertical="middle"), border_style="grey23")
     else:
-        plain_text = lyrics_data.get('plain', '')
+        plain_text = lyrics_data.get('plain') or ''
         return Panel(Align.center(Text(plain_text, style="white")), border_style="grey23")
 
 def render_progress() -> Panel:
