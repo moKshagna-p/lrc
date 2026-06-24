@@ -29,6 +29,12 @@ except ImportError:
     print("pip3 install rich requests Pillow pyfiglet")
     sys.exit(1)
 
+try:
+    from term_image.image import from_file as term_image_from_file
+    TERM_IMAGE = True
+except ImportError:
+    TERM_IMAGE = False
+
 # Global flag for exit
 EXIT_FLAG = False
 
@@ -205,6 +211,15 @@ def fetch_and_render_artwork(artist: str, album: str, track: str, width: int = 3
                         art_url = art_url.replace("100x100bb", "600x600bb")
                         img_resp = requests.get(art_url, timeout=5)
                         if img_resp.status_code == 200:
+                            if TERM_IMAGE:
+                                import tempfile, os
+                                with tempfile.NamedTemporaryFile(suffix=".jpg", delete=False) as f:
+                                    f.write(img_resp.content)
+                                    tmp_path = f.name
+                                img = term_image_from_file(tmp_path, width=36)
+                                os.remove(tmp_path)
+                                return img
+
                             img = Image.open(BytesIO(img_resp.content)).convert("RGB")
                             img = img.resize((width, width), Image.Resampling.LANCZOS)
                             pixels = img.load()
