@@ -398,7 +398,6 @@ def main():
                                 except Exception:
                                     pass
                                     
-                            import threading
                             threading.Thread(target=background_fetch, args=(key, artist, track, album), daemon=True).start()
                             
                     lyrics_data = cache[key]["lyrics"]
