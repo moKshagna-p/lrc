@@ -157,3 +157,28 @@ def parse_lrc(lrc_text: str) -> List[Tuple[float, str]]:
             lines.append((time_sec, text))
     return lines
 
+def fetch_lyrics(artist: str, track: str, album: str) -> Dict[str, Any]:
+    track_clean = re.sub(r'\(feat\..*?\)', '', track, flags=re.IGNORECASE).strip()
+    url = "https://lrclib.net/api/get"
+    params = {"artist_name": artist, "track_name": track_clean, "album_name": album}
+    
+    try:
+        resp = requests.get(url, params=params, timeout=5)
+        if resp.status_code == 404:
+            if "album_name" in params:
+                del params["album_name"]
+            resp = requests.get(url, params=params, timeout=5)
+            
+        if resp.status_code == 200:
+            data = resp.json()
+            synced = data.get("syncedLyrics")
+            plain = data.get("plainLyrics")
+            return {
+                "found": True,
+                "synced": parse_lrc(synced) if synced else None,
+                "plain": plain
+            }
+    except Exception:
+        pass
+    return {"found": False, "synced": None, "plain": None}
+
