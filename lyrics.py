@@ -28,3 +28,7 @@ except ImportError:
     print("pip3 install rich requests Pillow pyfiglet")
     sys.exit(1)
 
+# Global flag for exit
+EXIT_FLAG = False
+
+# Shared state for ultra-smooth UI
