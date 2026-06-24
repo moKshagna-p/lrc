@@ -180,9 +180,8 @@ def fetch_lyrics(artist: str, track: str, album: str) -> Dict[str, Any]:
                     "synced": parse_lrc(synced) if synced else None,
                     "plain": plain
                 }
-            break # If we connected successfully but got 404 again, stop retrying
+            break 
         except Exception:
-            import time
             time.sleep(0.5)
             continue
             
@@ -205,8 +204,6 @@ def fetch_and_render_artwork(artist: str, album: str, track: str, width: int = 3
                         art_url = art_url.replace("100x100bb", "600x600bb")
                         img_resp = requests.get(art_url, timeout=5)
                         if img_resp.status_code == 200:
-                            from PIL import Image
-                            from io import BytesIO
                             img = Image.open(BytesIO(img_resp.content)).convert("RGB")
                             img = img.resize((width, width), Image.Resampling.LANCZOS)
                             pixels = img.load()
@@ -224,7 +221,6 @@ def fetch_and_render_artwork(artist: str, album: str, track: str, width: int = 3
                             return Text("\n").join(lines)
             break
         except Exception:
-            import time
             time.sleep(0.5)
             continue
             
