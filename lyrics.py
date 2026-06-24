@@ -215,3 +215,18 @@ def fetch_and_render_artwork(artist: str, album: str, track: str, width: int = 3
         pass
     return None
 
+def make_layout() -> Layout:
+    layout = Layout()
+    layout.split_column(
+        Layout(name="header", size=10),
+        Layout(name="main", ratio=1),
+        Layout(name="progress", size=3),
+        Layout(name="footer", size=3)
+    )
+    
+    layout["main"].split_row(
+        Layout(name="artwork", size=42),
+        Layout(name="lyrics", ratio=1)
+    )
+    return layout
+
