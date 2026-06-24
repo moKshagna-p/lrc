@@ -190,41 +190,52 @@ def fetch_lyrics(artist: str, track: str, album: str) -> Dict[str, Any]:
 
 def fetch_and_render_artwork(artist: str, album: str, track: str, width: int = 36) -> Optional[Text]:
     url = "https://itunes.apple.com/search"
-    term = f"{artist} {track}"
-    params = {"term": term, "media": "music", "entity": "song", "limit": 1}
     headers = {"User-Agent": "LyricsViewer/1.0 (https://github.com/moKshagna-p/lrc)"}
-    
+    artist_lower = artist.lower()
+    track_lower = track.lower()
+
+    def search(params, name_field=None, name_value=None):
+        resp = requests.get(url, params=params, headers=headers, timeout=5)
+        if resp.status_code != 200:
+            return None
+        for r in resp.json().get("results", []):
+            if artist_lower not in r.get("artistName", "").lower():
+                continue
+            if name_field and name_value:
+                if name_value.lower() not in r.get(name_field, "").lower():
+                    continue
+            art_url = r.get("artworkUrl100")
+            if art_url:
+                img_resp = requests.get(art_url.replace("100x100bb", "600x600bb"), timeout=5)
+                if img_resp.status_code == 200:
+                    img = Image.open(BytesIO(img_resp.content)).convert("RGB")
+                    img = img.resize((width, width), Image.Resampling.LANCZOS)
+                    pixels = img.load()
+                    lines = []
+                    for y in range(0, width, 2):
+                        line = Text()
+                        for x in range(width):
+                            top = pixels[x, y]
+                            bottom = pixels[x, y+1] if y+1 < width else (0, 0, 0)
+                            style = f"rgb({top[0]},{top[1]},{top[2]}) on rgb({bottom[0]},{bottom[1]},{bottom[2]})"
+                            line.append("▀", style=style)
+                        lines.append(line)
+                    return Text("\n").join(lines)
+        return None
+
     for _ in range(3):
         try:
-            resp = requests.get(url, params=params, headers=headers, timeout=5)
-            if resp.status_code == 200:
-                results = resp.json().get("results", [])
-                if results:
-                    art_url = results[0].get("artworkUrl100")
-                    if art_url:
-                        art_url = art_url.replace("100x100bb", "600x600bb")
-                        img_resp = requests.get(art_url, timeout=5)
-                        if img_resp.status_code == 200:
-                            img = Image.open(BytesIO(img_resp.content)).convert("RGB")
-                            img = img.resize((width, width), Image.Resampling.LANCZOS)
-                            pixels = img.load()
-                            
-                            lines = []
-                            for y in range(0, width, 2):
-                                line = Text()
-                                for x in range(width):
-                                    top = pixels[x, y]
-                                    bottom = pixels[x, y+1] if y+1 < width else (0,0,0)
-                                    style = f"rgb({top[0]},{top[1]},{top[2]}) on rgb({bottom[0]},{bottom[1]},{bottom[2]})"
-                                    line.append("▀", style=style)
-                                lines.append(line)
-                                
-                            return Text("\n").join(lines)
+            if album:
+                result = search({"term": f"{artist} {album}", "media": "music", "entity": "album", "limit": 5}, "collectionName", album)
+                if result:
+                    return result
+            result = search({"term": f"{artist} {track}", "media": "music", "entity": "song", "limit": 5}, "trackName", track)
+            if result:
+                return result
             break
         except Exception:
             time.sleep(0.5)
             continue
-            
     return None
 
 def make_layout(artwork_size: int = 42) -> Layout:
