@@ -165,11 +165,11 @@ def fetch_lyrics(artist: str, track: str, album: str) -> Dict[str, Any]:
     
     for _ in range(3):
         try:
-            resp = requests.get(url, params=params, headers=headers, timeout=5)
+            resp = requests.get(url, params=params, headers=headers, timeout=20)
             if resp.status_code == 404:
                 if "album_name" in params:
                     del params["album_name"]
-                resp = requests.get(url, params=params, headers=headers, timeout=5)
+                resp = requests.get(url, params=params, headers=headers, timeout=20)
                 
             if resp.status_code == 200:
                 data = resp.json()
@@ -382,19 +382,24 @@ def main():
                         if key not in cache:
                             # Set initial loading state so the UI responds immediately
                             cache[key] = {
-                                "lyrics": {"found": False, "synced": None, "plain": "Loading lyrics..."},
+                                "lyrics": {"found": True, "synced": None, "plain": "Loading lyrics..."},
                                 "artwork": None
                             }
                             
                             # Spawn background thread to fetch data
                             def background_fetch(k, a, t, al):
                                 try:
-                                    art = fetch_and_render_artwork(a, al, t)
                                     lyr = fetch_lyrics(a, t, al)
                                     cache[k] = {
                                         "lyrics": lyr,
-                                        "artwork": art
+                                        "artwork": cache.get(k, {}).get("artwork")
                                     }
+                                except Exception:
+                                    pass
+                                try:
+                                    art = fetch_and_render_artwork(a, al, t)
+                                    if k in cache:
+                                        cache[k]["artwork"] = art
                                 except Exception:
                                     pass
                                     
