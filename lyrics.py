@@ -142,3 +142,18 @@ def apple_music_poll_thread():
                 break
             time.sleep(0.1)
 
+def parse_lrc(lrc_text: str) -> List[Tuple[float, str]]:
+    if not lrc_text:
+        return []
+    lines = []
+    pattern = re.compile(r'\[(\d+):(\d+(?:\.\d+)?)\](.*)')
+    for line in lrc_text.splitlines():
+        match = pattern.search(line)
+        if match:
+            m = int(match.group(1))
+            s = float(match.group(2))
+            text = match.group(3).strip()
+            time_sec = m * 60 + s
+            lines.append((time_sec, text))
+    return lines
+
