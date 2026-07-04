@@ -1,149 +1,26 @@
-package main
+package ui
 
 import (
-	"bytes"
-	"encoding/json"
 	"fmt"
 	"image"
-	"image/color"
-	_ "image/jpeg"
-	_ "image/png"
 	"io"
 	"math"
 	"net/http"
-	"net/url"
 	"os"
-	"os/exec"
-	"regexp"
-	"strconv"
 	"strings"
 	"sync"
 	"time"
 
+	"github.com/moKshagna-p/lrc/internal/api"
+	"github.com/moKshagna-p/lrc/internal/player"
+
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/lukesampson/figlet/figletlib"
-	"golang.org/x/image/draw"
 )
 
-// Shared State
-type PlayerState struct {
-	Status       string
-	TrackName    string
-	ArtistName   string
-	AlbumName    string
-	Position     float64
-	Duration     float64
-	LastSyncTime time.Time
-	mu           sync.RWMutex
-}
-
-func (p *PlayerState) Update(status, track, artist, album string, pos, dur float64) {
-	p.mu.Lock()
-	defer p.mu.Unlock()
-
-	songChanged := p.TrackName != track || p.ArtistName != artist
-
-	p.Status = status
-	if status == "PLAYING" {
-		p.TrackName = track
-		p.ArtistName = artist
-		p.AlbumName = album
-		p.Duration = dur
-
-		// Smooth out laggy osascript updates by preventing small backward jumps
-		currentSmoothed := p.Position
-		if !songChanged && !p.LastSyncTime.IsZero() {
-			currentSmoothed += time.Since(p.LastSyncTime).Seconds()
-		}
-
-		// If osascript's position is slightly behind our interpolated position,
-		// use the interpolated one to prevent the bar from "ticking" backwards.
-		// If the difference is large (>3 seconds), the user probably scrubbed the track.
-		if !songChanged && pos < currentSmoothed && (currentSmoothed-pos) < 3.0 {
-			p.Position = currentSmoothed
-		} else {
-			p.Position = pos
-		}
-
-		p.LastSyncTime = time.Now()
-	}
-}
-
-func (p *PlayerState) GetSmoothPosition() float64 {
-	p.mu.RLock()
-	defer p.mu.RUnlock()
-	if p.Status == "PLAYING" {
-		elapsed := time.Since(p.LastSyncTime).Seconds()
-		return math.Min(p.Position+elapsed, p.Duration)
-	}
-	return p.Position
-}
-
-var sharedState = &PlayerState{Status: "NOT_RUNNING"}
-
-// Polling Thread
-func appleMusicPollThread() {
-	script := `
-    tell application "System Events"
-        if not (exists process "Music") then
-            return "NOT_RUNNING"
-        end if
-    end tell
-    tell application "Music"
-        if player state is playing then
-            set t to name of current track
-            set ar to artist of current track
-            set al to album of current track
-            set pos to player position
-            set dur to duration of current track
-            return t & "||" & ar & "||" & al & "||" & pos & "||" & dur
-        else
-            return "NOT_PLAYING"
-        end if
-    end tell
-    `
-	for {
-		cmd := exec.Command("osascript", "-e", script)
-		var out bytes.Buffer
-		cmd.Stdout = &out
-		if err := cmd.Run(); err != nil {
-			sharedState.Update("ERROR", "", "", "", 0, 0)
-		} else {
-			res := strings.TrimSpace(out.String())
-			if res == "NOT_RUNNING" {
-				sharedState.Update("NOT_RUNNING", "", "", "", 0, 0)
-			} else if res == "NOT_PLAYING" {
-				sharedState.Update("NOT_PLAYING", "", "", "", 0, 0)
-			} else {
-				parts := strings.Split(res, "||")
-				if len(parts) >= 5 {
-					pos, _ := strconv.ParseFloat(strings.ReplaceAll(parts[3], ",", "."), 64)
-					dur, _ := strconv.ParseFloat(strings.ReplaceAll(parts[4], ",", "."), 64)
-					sharedState.Update("PLAYING", parts[0], parts[1], parts[2], pos, dur)
-				} else {
-					sharedState.Update("ERROR", "", "", "", 0, 0)
-				}
-			}
-		}
-		time.Sleep(1500 * time.Millisecond)
-	}
-}
-
-// Data Types
-type LyricLine struct {
-	Time float64
-	Text string
-}
-
-type LyricsData struct {
-	Found  bool
-	Synced []LyricLine
-	Plain  string
-}
-
 type CacheEntry struct {
-	Lyrics       *LyricsData
+	Lyrics       *api.LyricsData
 	ArtworkText  string
 	ArtworkWidth int
 	RawArtwork   image.Image
@@ -153,159 +30,6 @@ var (
 	cache   = make(map[string]*CacheEntry)
 	cacheMu sync.Mutex
 )
-
-// API Functions
-func parseLRC(lrcText string) []LyricLine {
-	var lines []LyricLine
-	re := regexp.MustCompile(`\[(\d+):(\d+(?:\.\d+)?)\](.*)`)
-	for _, line := range strings.Split(lrcText, "\n") {
-		matches := re.FindStringSubmatch(line)
-		if len(matches) == 4 {
-			m, _ := strconv.ParseFloat(matches[1], 64)
-			s, _ := strconv.ParseFloat(matches[2], 64)
-			text := strings.TrimSpace(matches[3])
-			lines = append(lines, LyricLine{Time: m*60 + s, Text: text})
-		}
-	}
-	return lines
-}
-
-func fetchLyrics(artist, track, album string) *LyricsData {
-	re := regexp.MustCompile(`(?i)\(feat\..*?\)`)
-	trackClean := strings.TrimSpace(re.ReplaceAllString(track, ""))
-
-	client := &http.Client{Timeout: 10 * time.Second}
-
-	reqURL, _ := url.Parse("https://lrclib.net/api/get")
-	q := reqURL.Query()
-	q.Set("artist_name", artist)
-	q.Set("track_name", trackClean)
-	q.Set("album_name", album)
-	reqURL.RawQuery = q.Encode()
-
-	for i := 0; i < 3; i++ {
-		req, _ := http.NewRequest("GET", reqURL.String(), nil)
-		req.Header.Set("User-Agent", "LyricsViewer/1.0 (https://github.com/moKshagna-p/lrc)")
-		resp, err := client.Do(req)
-		if err != nil {
-			time.Sleep(500 * time.Millisecond)
-			continue
-		}
-
-		if resp.StatusCode == 404 {
-			q.Del("album_name")
-			reqURL.RawQuery = q.Encode()
-			req, _ = http.NewRequest("GET", reqURL.String(), nil)
-			req.Header.Set("User-Agent", "LyricsViewer/1.0")
-			resp, err = client.Do(req)
-		}
-
-		if err == nil && resp.StatusCode == 200 {
-			defer resp.Body.Close()
-			var data struct {
-				SyncedLyrics string `json:"syncedLyrics"`
-				PlainLyrics  string `json:"plainLyrics"`
-			}
-			if err := json.NewDecoder(resp.Body).Decode(&data); err == nil {
-				return &LyricsData{
-					Found:  true,
-					Synced: parseLRC(data.SyncedLyrics),
-					Plain:  data.PlainLyrics,
-				}
-			}
-			return &LyricsData{Found: false}
-		}
-		if resp != nil {
-			resp.Body.Close()
-		}
-		break
-	}
-	return &LyricsData{Found: false}
-}
-
-func rgbToHex(c color.Color) string {
-	r, g, b, _ := c.RGBA()
-	return fmt.Sprintf("#%02x%02x%02x", r>>8, g>>8, b>>8)
-}
-
-func fetchArtwork(artist, album, track string) image.Image {
-	client := &http.Client{Timeout: 5 * time.Second}
-
-	search := func(term, entity string) string {
-		reqURL, _ := url.Parse("https://itunes.apple.com/search")
-		q := reqURL.Query()
-		q.Set("term", term)
-		q.Set("media", "music")
-		q.Set("entity", entity)
-		q.Set("limit", "5")
-		reqURL.RawQuery = q.Encode()
-
-		req, _ := http.NewRequest("GET", reqURL.String(), nil)
-		resp, err := client.Do(req)
-		if err != nil || resp.StatusCode != 200 {
-			return ""
-		}
-		defer resp.Body.Close()
-
-		var data struct {
-			Results []struct {
-				ArtworkUrl100 string `json:"artworkUrl100"`
-			} `json:"results"`
-		}
-		if err := json.NewDecoder(resp.Body).Decode(&data); err == nil && len(data.Results) > 0 {
-			for _, r := range data.Results {
-				if r.ArtworkUrl100 != "" {
-					return strings.ReplaceAll(r.ArtworkUrl100, "100x100bb", "600x600bb")
-				}
-			}
-		}
-		return ""
-	}
-
-	imgURL := search(artist+" "+album, "album")
-	if imgURL == "" {
-		imgURL = search(artist+" "+track, "song")
-	}
-	if imgURL == "" {
-		return nil
-	}
-
-	resp, err := client.Get(imgURL)
-	if err != nil || resp.StatusCode != 200 {
-		return nil
-	}
-	defer resp.Body.Close()
-
-	img, _, err := image.Decode(resp.Body)
-	if err != nil {
-		return nil
-	}
-	return img
-}
-
-func renderArtwork(img image.Image, width int) string {
-	if img == nil {
-		return ""
-	}
-	dst := image.NewRGBA(image.Rect(0, 0, width, width))
-	draw.CatmullRom.Scale(dst, dst.Rect, img, img.Bounds(), draw.Over, nil)
-
-	var lines []string
-	for y := 0; y < width; y += 2 {
-		var line string
-		for x := 0; x < width; x++ {
-			top := dst.At(x, y)
-			var bottom color.Color = color.RGBA{0, 0, 0, 255}
-			if y+1 < width {
-				bottom = dst.At(x, y+1)
-			}
-			style := lipgloss.NewStyle().Foreground(lipgloss.Color(rgbToHex(top))).Background(lipgloss.Color(rgbToHex(bottom)))
-			line += style.Render("▀")
-		}
-		lines = append(lines, line)
-	}
-	return strings.Join(lines, "\n")
-}
 
 // Bubble Tea Model
 type tickMsg time.Time
@@ -318,7 +42,7 @@ func tickCmd() tea.Cmd {
 
 type dataFetchedMsg struct {
 	Key        string
-	Lyrics     *LyricsData
+	Lyrics     *api.LyricsData
 	RawArtwork image.Image
 }
 
@@ -352,19 +76,14 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		cacheMu.Lock()
 		for _, entry := range cache {
 			if entry.RawArtwork != nil && entry.ArtworkWidth != awWidth {
-				entry.ArtworkText = renderArtwork(entry.RawArtwork, awWidth)
+				entry.ArtworkText = api.RenderArtwork(entry.RawArtwork, awWidth)
 				entry.ArtworkWidth = awWidth
 			}
 		}
 		cacheMu.Unlock()
 	case tickMsg:
 		var fetchCmd tea.Cmd
-		sharedState.mu.RLock()
-		status := sharedState.Status
-		track := sharedState.TrackName
-		artist := sharedState.ArtistName
-		album := sharedState.AlbumName
-		sharedState.mu.RUnlock()
+		status, track, artist, album, _ := player.SharedState.GetState()
 
 		if status == "PLAYING" {
 			key := artist + "-" + track
@@ -373,12 +92,12 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				cacheMu.Lock()
 				if _, ok := cache[key]; !ok {
 					cache[key] = &CacheEntry{
-						Lyrics: &LyricsData{Found: true, Plain: "Loading lyrics..."},
+						Lyrics: &api.LyricsData{Found: true, Plain: "Loading lyrics..."},
 					}
 					// Background fetch
 					fetchCmd = func() tea.Msg {
-						lyr := fetchLyrics(artist, track, album)
-						art := fetchArtwork(artist, album, track)
+						lyr := api.FetchLyrics(artist, track, album)
+						art := api.FetchArtwork(artist, album, track)
 						return dataFetchedMsg{Key: key, Lyrics: lyr, RawArtwork: art}
 					}
 				}
@@ -404,7 +123,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				if awWidth > 60 {
 					awWidth = 60
 				}
-				entry.ArtworkText = renderArtwork(msg.RawArtwork, awWidth)
+				entry.ArtworkText = api.RenderArtwork(msg.RawArtwork, awWidth)
 				entry.ArtworkWidth = awWidth
 			}
 		}
@@ -418,15 +137,8 @@ func (m model) View() string {
 		return ""
 	}
 
-	sharedState.mu.RLock()
-	status := sharedState.Status
-	track := sharedState.TrackName
-	artist := sharedState.ArtistName
-	album := sharedState.AlbumName
-	dur := sharedState.Duration
-	sharedState.mu.RUnlock()
-
-	pos := sharedState.GetSmoothPosition()
+	status, track, artist, album, dur := player.SharedState.GetState()
+	pos := player.SharedState.GetSmoothPosition()
 
 	// Styles matching the Python version
 	boxStyle := lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).BorderForeground(lipgloss.Color("237")).Align(lipgloss.Center)
@@ -603,9 +315,7 @@ func (m model) View() string {
 	return lipgloss.JoinVertical(lipgloss.Left, headerView, mainView, progView, footView)
 }
 
-func main() {
-	go appleMusicPollThread()
-
+func Start() {
 	// Try to load figlet font, but fallback gracefully if missing
 	fontURL := "https://raw.githubusercontent.com/xero/figlet-fonts/master/Small.flf"
 	var font *figletlib.Font

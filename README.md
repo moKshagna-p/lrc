@@ -17,7 +17,7 @@ Built with **Go**, [Bubble Tea](https://github.com/charmbracelet/bubbletea), and
    ```bash
    git clone https://github.com/moKshagna-p/lrc.git
    cd lrc
-   go build -o lrc_go
+   go build -o lrc_go ./cmd/lrc
    ```
 
 3. Add this alias to your `~/.zshrc` (or `~/.bashrc`) so you can run it from anywhere:
