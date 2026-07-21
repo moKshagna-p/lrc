@@ -83,7 +83,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		cacheMu.Unlock()
 	case tickMsg:
 		var fetchCmd tea.Cmd
-		status, track, artist, album, _ := player.SharedState.GetState()
+		status, _, track, artist, album, _ := player.SharedState.GetState()
 
 		if status == "PLAYING" {
 			key := artist + "-" + track
@@ -137,7 +137,7 @@ func (m model) View() string {
 		return ""
 	}
 
-	status, track, artist, album, dur := player.SharedState.GetState()
+	status, source, track, artist, album, dur := player.SharedState.GetState()
 	pos := player.SharedState.GetSmoothPosition()
 
 	// Styles matching the Python version
@@ -153,11 +153,11 @@ func (m model) View() string {
 	}
 
 	if status == "NOT_RUNNING" {
-		return lipgloss.Place(m.width, m.height, lipgloss.Center, lipgloss.Center, "Apple Music is not running")
+		return lipgloss.Place(m.width, m.height, lipgloss.Center, lipgloss.Center, "Apple Music or Spotify is not running")
 	} else if status == "NOT_PLAYING" {
-		return lipgloss.Place(m.width, m.height, lipgloss.Center, lipgloss.Center, "Nothing playing in Apple Music ♫")
+		return lipgloss.Place(m.width, m.height, lipgloss.Center, lipgloss.Center, "Nothing playing in "+source+" ♫")
 	} else if status == "ERROR" {
-		return lipgloss.Place(m.width, m.height, lipgloss.Center, lipgloss.Center, lipgloss.NewStyle().Foreground(lipgloss.Color("9")).Render("Error connecting to Apple Music"))
+		return lipgloss.Place(m.width, m.height, lipgloss.Center, lipgloss.Center, lipgloss.NewStyle().Foreground(lipgloss.Color("9")).Render("Error connecting to Apple Music or Spotify"))
 	}
 
 	// HEADER
@@ -309,7 +309,7 @@ func (m model) View() string {
 	progView := boxStyle.Copy().Width(m.width - 2).Height(progH - 2).Render(bar)
 
 	// FOOTER
-	footText := lipgloss.NewStyle().Foreground(lipgloss.Color("240")).Render("press Q to quit")
+	footText := lipgloss.NewStyle().Foreground(lipgloss.Color("240")).Render(source + " • press Q to quit")
 	footView := boxStyle.Copy().Width(m.width - 2).Height(footerH - 2).Render(footText)
 
 	return lipgloss.JoinVertical(lipgloss.Left, headerView, mainView, progView, footView)
