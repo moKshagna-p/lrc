@@ -53,6 +53,25 @@ type model struct {
 	figletFont     *figletlib.Font
 }
 
+func artworkWidth(termWidth, mainHeight int) int {
+	width := termWidth / 4
+	if width < 20 {
+		width = 20
+	}
+	if width > 60 {
+		width = 60
+	}
+
+	maxByHeight := (mainHeight - 2) * 2
+	if maxByHeight < 2 {
+		maxByHeight = 2
+	}
+	if width > maxByHeight {
+		width = maxByHeight
+	}
+	return width
+}
+
 func (m model) Init() tea.Cmd {
 	return tea.Batch(tickCmd())
 }
@@ -66,13 +85,11 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.WindowSizeMsg:
 		m.width = msg.Width
 		m.height = msg.Height
-		awWidth := m.width / 4
-		if awWidth < 20 {
-			awWidth = 20
+		mainHeight := m.height - 8 - 3 - 3
+		if mainHeight < 10 {
+			mainHeight = 10
 		}
-		if awWidth > 60 {
-			awWidth = 60
-		}
+		awWidth := artworkWidth(m.width, mainHeight)
 		cacheMu.Lock()
 		for _, entry := range cache {
 			if entry.RawArtwork != nil && entry.ArtworkWidth != awWidth {
@@ -116,13 +133,11 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			entry.Lyrics = msg.Lyrics
 			if msg.RawArtwork != nil {
 				entry.RawArtwork = msg.RawArtwork
-				awWidth := m.width / 4
-				if awWidth < 20 {
-					awWidth = 20
+				mainHeight := m.height - 8 - 3 - 3
+				if mainHeight < 10 {
+					mainHeight = 10
 				}
-				if awWidth > 60 {
-					awWidth = 60
-				}
+				awWidth := artworkWidth(m.width, mainHeight)
 				entry.ArtworkText = api.RenderArtwork(msg.RawArtwork, awWidth)
 				entry.ArtworkWidth = awWidth
 			}
@@ -191,13 +206,7 @@ func (m model) View() string {
 	entry := cache[m.currentSongKey]
 	cacheMu.Unlock()
 
-	awWidth := m.width / 4
-	if awWidth < 20 {
-		awWidth = 20
-	}
-	if awWidth > 60 {
-		awWidth = 60
-	}
+	awWidth := artworkWidth(m.width, mainH)
 	artView := boxStyle.Copy().Width(awWidth + 6).Height(mainH - 2).Render(lipgloss.NewStyle().Foreground(lipgloss.Color("240")).Render("No Artwork Found"))
 
 	var lyrText string

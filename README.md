@@ -31,6 +31,11 @@ ln -sf "$(go env GOPATH)/bin/lrc" "$(go env GOPATH)/bin/lyrics"
 Simply run `lyrics` in your terminal while Apple Music or Spotify is playing a song. If both are playing, Apple Music is shown.
 Press `Q` or `Ctrl+C` to quit.
 
+Album artwork is rendered with true-color Unicode quadrant cells. This keeps
+the image aligned with the lyrics in Bubble Tea while providing twice the
+horizontal sample detail of a traditional half-block renderer, without
+requiring a Kitty- or Sixel-specific terminal.
+
 ## Acknowledgements
 - The original version was prototyped with Python and `rich`.
 - Lyrics provided via the excellent [lrclib.net](https://lrclib.net/) API.
